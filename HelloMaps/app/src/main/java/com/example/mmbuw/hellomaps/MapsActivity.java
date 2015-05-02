@@ -1,6 +1,7 @@
 package com.example.mmbuw.hellomaps;
 
 import android.content.Context;
+import android.content.SharedPreferences;
 import android.location.Location;
 import android.location.LocationListener;
 import android.location.LocationManager;
@@ -14,16 +15,26 @@ import com.google.android.gms.maps.model.LatLng;
 import com.google.android.gms.maps.model.Marker;
 import com.google.android.gms.maps.model.MarkerOptions;
 
+import org.json.JSONException;
+import org.json.JSONObject;
+
+import java.util.HashSet;
+import java.util.Set;
+
 public class MapsActivity extends FragmentActivity {
 
     private GoogleMap mMap; // Might be null if Google Play services APK is not available.
     private LocationManager locationManager;
     private LocationListener locationListener;
     private Marker currentLocation;
+    private SharedPreferences sharedPref;
+    private Set<String> savedMarkers = new HashSet<String>();
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        sharedPref = this.getPreferences(Context.MODE_PRIVATE);
+        savedMarkers = new HashSet<String>(sharedPref.getStringSet("markers", savedMarkers));
         setContentView(R.layout.activity_maps);
         setUpMapIfNeeded();
         locationManager = (LocationManager) this.getSystemService(Context.LOCATION_SERVICE);
@@ -49,6 +60,14 @@ public class MapsActivity extends FragmentActivity {
     protected void onPause() {
         super.onPause();
         locationManager.removeUpdates(locationListener);
+    }
+
+    @Override
+    protected void onStop() {
+        super.onStop();
+        sharedPref.edit()
+                .putStringSet("markers", savedMarkers)
+                .apply();
     }
 
     /**
@@ -91,6 +110,15 @@ public class MapsActivity extends FragmentActivity {
                 .title("Current Location"));
         MapListener mapListener = new MapListener();
         mMap.setOnMapLongClickListener(mapListener);
+        for (String s : savedMarkers){
+            try {
+                JSONObject marker = new JSONObject(s);
+                mMap.addMarker(new MarkerOptions()
+                        .position(new LatLng(marker.getDouble("lat"), marker.getDouble("lng")))
+                        .title(marker.getString("title"))
+                );
+            } catch (org.json.JSONException e) {/*don't really care*/}
+        }
     }
 
     private void makeUseOfNewLocation(Location location){
@@ -105,6 +133,13 @@ public class MapsActivity extends FragmentActivity {
             mMap.addMarker(new MarkerOptions()
                     .position(point)
                     .title(editText.getText().toString()));
+            JSONObject marker = new JSONObject();
+            try {
+                marker.put("lat", point.latitude);
+                marker.put("lng", point.longitude);
+                marker.put("title", editText.getText().toString());
+                savedMarkers.add(marker.toString());
+            } catch (JSONException e) {/*well...*/}
             editText.setText("");
         }
     }
