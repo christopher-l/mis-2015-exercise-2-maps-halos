@@ -6,6 +6,7 @@ import android.location.LocationListener;
 import android.location.LocationManager;
 import android.support.v4.app.FragmentActivity;
 import android.os.Bundle;
+import android.widget.EditText;
 
 import com.google.android.gms.maps.GoogleMap;
 import com.google.android.gms.maps.SupportMapFragment;
@@ -31,11 +32,8 @@ public class MapsActivity extends FragmentActivity {
                 // Called when a new location is found by the network location provider.
                 makeUseOfNewLocation(location);
             }
-
             public void onStatusChanged(String provider, int status, Bundle extras) {}
-
             public void onProviderEnabled(String provider) {}
-
             public void onProviderDisabled(String provider) {}
         };
     }
@@ -91,10 +89,25 @@ public class MapsActivity extends FragmentActivity {
         currentLocation = mMap.addMarker(new MarkerOptions()
                 .position(new LatLng(0, 0))
                 .title("Current Location"));
+        MapListener mapListener = new MapListener();
+        mMap.setOnMapLongClickListener(mapListener);
     }
 
     private void makeUseOfNewLocation(Location location){
         LatLng latLng = new LatLng(location.getLatitude(), location.getLongitude());
         currentLocation.setPosition(latLng);
     }
+
+    private class MapListener implements GoogleMap.OnMapLongClickListener {
+        @Override
+        public void onMapLongClick(LatLng point){
+            EditText editText = (EditText)findViewById(R.id.editText);
+            mMap.addMarker(new MarkerOptions()
+                    .position(point)
+                    .title(editText.getText().toString()));
+            editText.setText("");
+        }
+    }
+
+
 }
