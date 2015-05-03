@@ -2,6 +2,7 @@ package com.example.mmbuw.hellomaps;
 
 import android.content.Context;
 import android.content.SharedPreferences;
+import android.graphics.Color;
 import android.graphics.Point;
 import android.location.Location;
 import android.location.LocationListener;
@@ -16,6 +17,7 @@ import com.google.android.gms.maps.Projection;
 import com.google.android.gms.maps.SupportMapFragment;
 import com.google.android.gms.maps.model.CameraPosition;
 import com.google.android.gms.maps.model.Circle;
+import com.google.android.gms.maps.model.CircleOptions;
 import com.google.android.gms.maps.model.LatLng;
 import com.google.android.gms.maps.model.Marker;
 import com.google.android.gms.maps.model.MarkerOptions;
@@ -30,6 +32,8 @@ import java.util.Set;
 public class MapsActivity extends FragmentActivity {
 
     private GoogleMap mMap; // Might be null if Google Play services APK is not available.
+    private View mapView;
+    private Projection projection;
     private LocationManager locationManager;
     private LocationListener locationListener;
     private Marker currentLocation;
@@ -108,6 +112,8 @@ public class MapsActivity extends FragmentActivity {
      * This should only be called once and when we are sure that {@link #mMap} is not null.
      */
     private void setUpMap() {
+        mapView = findViewById(R.id.map);
+        projection = mMap.getProjection();
         currentLocation = mMap.addMarker(new MarkerOptions()
                 .position(new LatLng(0, 0))
                 .title("Current Location"));
@@ -129,6 +135,7 @@ public class MapsActivity extends FragmentActivity {
             LatLng point;
             String title;
             Circle circle;
+            final static private int overlap = 20;
 
             public Marker (LatLng newPoint, String newTitle) {
                 point = newPoint;
@@ -147,6 +154,70 @@ public class MapsActivity extends FragmentActivity {
                 json.put("lng", point.longitude);
                 json.put("title", title);
                 return json.toString();
+            }
+
+            public void drawCircle() {
+                if (isVisible()) {
+                    if (circle != null) {
+                        circle.remove();
+                        circle = null;
+                    }
+                } else {
+                    if (circle == null) {
+                        circle = mMap.addCircle(new CircleOptions()
+                                .center(point)
+                                .radius(calcCircRadius())
+                                .strokeColor(Color.RED));
+                    } else {
+                        circle.setRadius(calcCircRadius());
+                    }
+                }
+            }
+
+            private boolean isVisible() {
+                Point screenPoint = projection.toScreenLocation(point);
+                return screenPoint.x > 0 &&
+                        screenPoint.x < mapView.getWidth() &&
+                        screenPoint.y > 0 &&
+                        screenPoint.y < mapView.getHeight();
+            }
+
+            private Point calcNearestScreenPoint() {
+                Point screenPoint = projection.toScreenLocation(point);
+                if (screenPoint.x < 0) {
+                    if (screenPoint.y < 0) {
+                        return new Point(overlap, overlap);
+                    } else if (screenPoint.y > mapView.getHeight()) {
+                        return new Point(overlap, mapView.getHeight() - overlap);
+                    } else {
+                        return new Point(overlap, screenPoint.y);
+                    }
+                } else if (screenPoint.x > mapView.getWidth()) {
+                    if (screenPoint.y < 0) {
+                        return new Point(mapView.getWidth() - overlap, overlap);
+                    } else if (screenPoint.y > mapView.getHeight()) {
+                        return new Point(mapView.getWidth() - overlap, mapView.getHeight() - overlap);
+                    } else {
+                        return new Point(mapView.getWidth() - overlap, screenPoint.y);
+                    }
+                } else {
+                    if (screenPoint.y < 0) {
+                        return new Point(screenPoint.x, overlap);
+                    } else if (screenPoint.y > mapView.getHeight()) {
+                        return new Point(screenPoint.x, mapView.getHeight() - overlap);
+                    } else {
+                        return screenPoint; // Point is visible on the screen.
+                                            // This should not happen.
+                    }
+                }
+            }
+
+            private double calcCircRadius() {
+                LatLng nearestScreenPoint = projection.fromScreenLocation(calcNearestScreenPoint());
+                float[] results = new float[]{0};
+                Location.distanceBetween(point.latitude, point.longitude,
+                        nearestScreenPoint.latitude, nearestScreenPoint.longitude, results);
+                return (double) results[0];
             }
         }
 
@@ -193,6 +264,12 @@ public class MapsActivity extends FragmentActivity {
                 } catch (JSONException e) {}
             }
         }
+
+        public void updateCircles() {
+            for (Marker marker : markers) {
+                marker.drawCircle();
+            }
+        }
     }
 
 
@@ -200,18 +277,6 @@ public class MapsActivity extends FragmentActivity {
     private class MapListener implements
             GoogleMap.OnMapLongClickListener,
             GoogleMap.OnCameraChangeListener {
-
-        View view;
-
-        public MapListener() {
-            view = findViewById(R.id.map);
-            //int width = view.getWidth();
-            //int height = view.getMeasuredHeight();
-            //upperLeft = new Point(0, 0);
-            //upperRight = new Point(width, 0);
-            //lowerLeft = new Point(0, height);
-            //lowerRight = new Point(width, height);
-        }
 
         @Override
         public void onMapLongClick(LatLng point){
@@ -222,10 +287,8 @@ public class MapsActivity extends FragmentActivity {
 
         @Override
         public void onCameraChange(CameraPosition position){
-            Projection projection = mMap.getProjection();
-            int width = view.getWidth();
-            int height = view.getHeight();
-            //System.out.println(projection.toScreenLocation(currentLocation.getPosition()).toString());
+            projection = mMap.getProjection();
+            markers.updateCircles();
         }
     }
 
