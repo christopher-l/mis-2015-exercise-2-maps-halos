@@ -2,18 +2,24 @@ package com.example.mmbuw.hellomaps;
 
 import android.content.Context;
 import android.content.SharedPreferences;
+import android.graphics.Point;
 import android.location.Location;
 import android.location.LocationListener;
 import android.location.LocationManager;
 import android.support.v4.app.FragmentActivity;
 import android.os.Bundle;
+import android.view.View;
 import android.widget.EditText;
 
 import com.google.android.gms.maps.GoogleMap;
+import com.google.android.gms.maps.Projection;
 import com.google.android.gms.maps.SupportMapFragment;
+import com.google.android.gms.maps.model.CameraPosition;
+import com.google.android.gms.maps.model.Circle;
 import com.google.android.gms.maps.model.LatLng;
 import com.google.android.gms.maps.model.Marker;
 import com.google.android.gms.maps.model.MarkerOptions;
+import com.google.android.gms.maps.model.VisibleRegion;
 
 import org.json.JSONException;
 import org.json.JSONObject;
@@ -27,14 +33,13 @@ public class MapsActivity extends FragmentActivity {
     private LocationManager locationManager;
     private LocationListener locationListener;
     private Marker currentLocation;
-    private SharedPreferences sharedPref;
-    private Set<String> savedMarkers = new HashSet<String>();
+    private Markers markers;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        sharedPref = this.getPreferences(Context.MODE_PRIVATE);
-        savedMarkers = new HashSet<String>(sharedPref.getStringSet("markers", savedMarkers));
+
+        markers = new Markers(this);
         setContentView(R.layout.activity_maps);
         setUpMapIfNeeded();
         locationManager = (LocationManager) this.getSystemService(Context.LOCATION_SERVICE);
@@ -65,9 +70,7 @@ public class MapsActivity extends FragmentActivity {
     @Override
     protected void onStop() {
         super.onStop();
-        sharedPref.edit()
-                .putStringSet("markers", savedMarkers)
-                .apply();
+        markers.saveMarkers();
     }
 
     /**
@@ -110,15 +113,8 @@ public class MapsActivity extends FragmentActivity {
                 .title("Current Location"));
         MapListener mapListener = new MapListener();
         mMap.setOnMapLongClickListener(mapListener);
-        for (String s : savedMarkers){
-            try {
-                JSONObject marker = new JSONObject(s);
-                mMap.addMarker(new MarkerOptions()
-                        .position(new LatLng(marker.getDouble("lat"), marker.getDouble("lng")))
-                        .title(marker.getString("title"))
-                );
-            } catch (org.json.JSONException e) {/*don't really care*/}
-        }
+        mMap.setOnCameraChangeListener(mapListener);
+        markers.loadMarkers();
     }
 
     private void makeUseOfNewLocation(Location location){
@@ -126,21 +122,110 @@ public class MapsActivity extends FragmentActivity {
         currentLocation.setPosition(latLng);
     }
 
-    private class MapListener implements GoogleMap.OnMapLongClickListener {
+
+    private class Markers {
+
+        private class Marker {
+            LatLng point;
+            String title;
+            Circle circle;
+
+            public Marker (LatLng newPoint, String newTitle) {
+                point = newPoint;
+                title = newTitle;
+            }
+
+            public Marker (String json) throws JSONException {
+                JSONObject marker = new JSONObject(json);
+                point = new LatLng (marker.getDouble("lat"), marker.getDouble("lng"));
+                title = marker.getString("title");
+            }
+
+            public String toJSON() throws JSONException {
+                JSONObject json = new JSONObject();
+                json.put("lat", point.latitude);
+                json.put("lng", point.longitude);
+                json.put("title", title);
+                return json.toString();
+            }
+        }
+
+        private Set<Marker> markers = new HashSet<Marker>();
+        private SharedPreferences sharedPref;
+
+        public Markers(FragmentActivity activity) {
+            sharedPref = activity.getPreferences(Context.MODE_PRIVATE);
+        }
+
+        public void addMarker(Marker marker) {
+            markers.add(marker);
+            mMap.addMarker(new MarkerOptions()
+                            .position(marker.point)
+                            .title(marker.title)
+            );
+        }
+
+        public void addMarker(LatLng point, String title) {
+            Marker marker = new Marker(point, title);
+            addMarker(marker);
+        }
+
+        public void saveMarkers() {
+            Set<String> savedMarkers = new HashSet<String>();
+            for (Marker marker : markers) {
+                try {
+                    String json = marker.toJSON();
+                    savedMarkers.add(json);
+                } catch (JSONException e) {}
+            }
+            sharedPref.edit()
+                    .putStringSet("markers", savedMarkers)
+                    .apply();
+        }
+
+        public void loadMarkers() {
+            Set<String> savedMarkers =
+                    new HashSet<String>(sharedPref.getStringSet("markers", new HashSet<String>()));
+            for (String s : savedMarkers){
+                try {
+                    Marker marker = new Marker(s);
+                    addMarker(marker);
+                } catch (JSONException e) {}
+            }
+        }
+    }
+
+
+
+    private class MapListener implements
+            GoogleMap.OnMapLongClickListener,
+            GoogleMap.OnCameraChangeListener {
+
+        View view;
+
+        public MapListener() {
+            view = findViewById(R.id.map);
+            //int width = view.getWidth();
+            //int height = view.getMeasuredHeight();
+            //upperLeft = new Point(0, 0);
+            //upperRight = new Point(width, 0);
+            //lowerLeft = new Point(0, height);
+            //lowerRight = new Point(width, height);
+        }
+
         @Override
         public void onMapLongClick(LatLng point){
             EditText editText = (EditText)findViewById(R.id.editText);
-            mMap.addMarker(new MarkerOptions()
-                    .position(point)
-                    .title(editText.getText().toString()));
-            JSONObject marker = new JSONObject();
-            try {
-                marker.put("lat", point.latitude);
-                marker.put("lng", point.longitude);
-                marker.put("title", editText.getText().toString());
-                savedMarkers.add(marker.toString());
-            } catch (JSONException e) {/*well...*/}
+            markers.addMarker(point, editText.getText().toString());
             editText.setText("");
+        }
+
+        @Override
+        public void onCameraChange(CameraPosition position){
+            Projection projection = mMap.getProjection();
+            int width = view.getWidth();
+            int height = view.getHeight();
+            //System.out.println(projection.toScreenLocation(currentLocation.getPosition()).toString());
         }
     }
 
